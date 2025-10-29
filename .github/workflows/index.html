@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fund Flow Control System Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .dashboard-card { background-color: #ffffff; border-radius: 0.75rem; box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); transition: transform 0.2s; }
+        .dashboard-card:hover { transform: translateY(-2px); }
+        .input-field { border-radius: 0.5rem; border: 1px solid #d1d5db; padding: 0.75rem; transition: border-color 0.15s ease-in-out; }
+        .input-field:focus { border-color: #4f46e5; outline: none; box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.25); }
+        .scrollable-log { max-height: 250px; overflow-y: auto; }
+        .admin-reset-button { background-color: #dc2626; color: white; transition: background-color 0.15s ease-in-out; }
+        .admin-reset-button:hover { background-color: #b91c1c; }
+        .admin-correction { background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 0.5rem; }
+        
+        /* New Styling for Branch Summary Cards */
+        .branch-card-content { z-index: 10; position: relative; }
+        .branch-card-visual { height: 100%; position: absolute; top: 0; left: 0; transition: width 0.5s ease-out; opacity: 0.05; }
+        .branch-card-positive { background-color: #10b981; } /* Emerald-500 */
+        .branch-card-negative { background-color: #f87171; } /* Red-400 */
+    </style>
+</head>
+<body class="p-4 md:p-8">
+
+    <div id="app" class="max-w-7xl mx-auto space-y-8">
+        <h1 class="text-4xl font-extrabold text-gray-800 text-center">Fund Flow Control System</h1>
+        
+        <!-- Status and Auth Info -->
+        <div id="status" class="p-4 rounded-xl text-sm bg-indigo-50 text-indigo-800 border border-indigo-200">Initializing system...</div>
+        <div id="userInfo" class="text-sm text-gray-600 text-center"></div>
+
+        <!-- Dashboard Summary (Row 1) -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="dashboard-card p-6 border-l-4 border-indigo-500">
+                <p class="text-sm font-medium text-gray-500">Total Net Balance</p>
+                <p id="totalNetBalance" class="mt-1 text-3xl font-semibold text-gray-900">$0.00</p>
+            </div>
+            <div class="dashboard-card p-6 border-l-4 border-green-500">
+                <p class="text-sm font-medium text-gray-500">Core/CC Balance</p>
+                <p id="coreBalance" class="mt-1 text-3xl font-semibold text-gray-900">$0.00</p>
+            </div>
+            <div class="dashboard-card p-6 border-l-4 border-blue-500">
+                <p class="text-sm font-medium text-gray-500">UPI/Wallet Balance</p>
+                <p id="upiBalance" class="mt-1 text-3xl font-semibold text-gray-900">$0.00</p>
+            </div>
+        </div>
+
+        <!-- Main Content Area (Row 2) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Column 1: Transaction Form -->
+            <div class="lg:col-span-1 space-y-4">
+                <div class="dashboard-card p-6 space-y-4">
+                    <h2 class="text-xl font-bold text-indigo-700">Log New Transaction</h2>
+                    <form id="transactionForm" class="space-y-3">
+                        
+                        <!-- Transaction Type -->
+                        <div>
+                            <label for="transactionType" class="block text-sm font-medium text-gray-700">1. Transaction Type</label>
+                            <select id="transactionType" class="input-field w-full" required>
+                                <option value="Income">Income</option>
+                                <option value="Expense">Expense</option>
+                                <option value="Transfer">Transfer (Within Company)</option>
+                            </select>
+                        </div>
+
+                        <!-- Amount -->
+                        <div>
+                            <label for="amount" class="block text-sm font-medium text-gray-700">2. Amount ($)</label>
+                            <input type="number" step="0.01" id="amount" class="input-field w-full" placeholder="e.g., 5000.00" required>
+                        </div>
+
+                        <!-- Branch/Location Filter -->
+                        <div id="branchFilterContainer">
+                            <label for="branchFilter" class="block text-sm font-medium text-gray-700">3a. Filter by Branch/Bank Name</label>
+                            <select id="branchFilter" class="input-field w-full">
+                                <option value="">(All Branches/Banks)</option>
+                            </select>
+                        </div>
+
+                        <!-- Banking Type Filter -->
+                        <div id="typeFilterContainer">
+                            <label for="typeFilter" class="block text-sm font-medium text-gray-700">3b. Filter by Banking Type</label>
+                            <select id="typeFilter" class="input-field w-full">
+                                <option value="">(All Banking Types)</option>
+                                <!-- Options are now dynamically populated based on Branch filter -->
+                            </select>
+                        </div>
+                        
+                        <!-- Source/Destination Account -->
+                        <div>
+                            <label for="sourceAccount" class="block text-sm font-medium text-gray-700">4. Source/Destination Account</label>
+                            <select id="sourceAccount" class="input-field w-full" required>
+                                <option value="">-- Select Account --</option>
+                            </select>
+                        </div>
+
+                        <!-- Selected Account's Banking Type (Read-only) -->
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Selected Account's Banking Type</label>
+                            <input type="text" id="bankingTypeDisplay" class="input-field w-full bg-gray-100 cursor-not-allowed" readonly placeholder="Type will appear here">
+                        </div>
+
+                        <!-- Transfer Target (Visible only if Type is Transfer) -->
+                        <div id="transferTargetContainer" class="hidden">
+                            <label for="targetAccount" class="block text-sm font-medium text-gray-700">5. Transfer TO Account</label>
+                            <select id="targetAccount" class="input-field w-full">
+                                <option value="">-- Select Destination Account --</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Expense Branch (Visible only if Type is Expense) -->
+                        <div id="expenseBranchContainer" class="hidden">
+                            <label for="expenseBranch" class="block text-sm font-medium text-gray-700">5. Branch for Expense Tracking</label>
+                            <select id="expenseBranch" class="input-field w-full">
+                                <option value="">-- Select Branch Location --</option>
+                            </select>
+                        </div>
+
+                        <!-- Description/Details -->
+                        <div>
+                            <label for="description" class="block text-sm font-medium text-gray-700">Details / Narration</label>
+                            <textarea id="description" class="input-field w-full resize-none" rows="2" required placeholder="Brief description of the transaction"></textarea>
+                        </div>
+
+                        <button type="submit" id="logTransactionButton" disabled
+                                class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold shadow-md hover:bg-indigo-700 transition duration-150">
+                            Log Final Transaction
+                        </button>
+                        <div id="transactionError" class="text-sm text-red-600"></div>
+
+                    </form>
+                </div>
+
+                <!-- Account Manager Toggle -->
+                <button id="toggleAccountManager" class="w-full bg-purple-600 text-white py-3 rounded-xl font-semibold shadow-md hover:bg-purple-700 transition duration-150">
+                    <span id="accountManagerToggleText">Manage Accounts (Add/Delete)</span>
+                </button>
+                
+                <!-- Account Manager Form (Initially Hidden) -->
+                <div id="accountManager" class="dashboard-card p-6 space-y-3 hidden">
+                    <h2 class="text-xl font-bold text-gray-700">Add New Account</h2>
+                    <form id="addAccountForm" class="space-y-3">
+                        <input type="text" id="newAcctName" class="input-field w-full" placeholder="A/C Name (e.g., S.M. CORPORATION)" required>
+                        <input type="text" id="newBankName" class="input-field w-full" placeholder="Bank Name (e.g., HDFC BANK)" required>
+                        <input type="text" id="newBranch" class="input-field w-full" placeholder="Branch/Location (e.g., SATNA or N/A)" required>
+                        <select id="newAcctType" class="input-field w-full" required>
+                            <option value="">-- Select Type --</option>
+                            <option value="Core">Core</option>
+                            <option value="UPI">UPI</option>
+                        </select>
+                        <input type="number" step="0.01" id="newBalance" class="input-field w-full" placeholder="Initial Balance (0.00)" value="0.00" required>
+                        <button type="submit" class="w-full bg-green-500 text-white py-2 rounded-xl font-semibold hover:bg-green-600 transition">Add Account</button>
+                    </form>
+                    
+                    <h2 class="text-xl font-bold text-gray-700 mt-6">Delete Account</h2>
+                    <select id="deleteAccountSelect" class="input-field w-full">
+                        <option value="">-- Select Account to Delete --</option>
+                    </select>
+                    <!-- This acts as the Admin's "Remove" button for accounts -->
+                    <button id="deleteAccountButton" class="w-full bg-red-500 text-white py-2 rounded-xl font-semibold hover:bg-red-600 transition" disabled>
+                        Delete Selected Account
+                    </button>
+                </div>
+
+                <!-- Admin Access Control Panel (Admin Only) -->
+                <div id="adminPanel" class="dashboard-card p-6 space-y-4 hidden bg-red-50 border-2 border-red-300">
+                    <h2 class="text-xl font-bold text-red-700">Admin Access Control (User Permissions)</h2>
+
+                    <!-- Permission Management Form -->
+                    <h3 class="text-lg font-semibold text-gray-700">Manage User Permissions</h3>
+                    <form id="permissionsForm" class="space-y-3">
+                        <input type="email" id="userEmailInput" class="input-field w-full" placeholder="User Email (e.g., team.member@company.com)" required>
+                        <select id="userRoleSelect" class="input-field w-full">
+                            <option value="Inputer">Inputer</option>
+                            <option value="Admin">Admin</option>
+                        </select>
+                        <textarea id="allowedBranchesInput" class="input-field w-full resize-none" rows="2" placeholder="Allowed Branches (comma separated, e.g., SATNA, DELHI)" required></textarea>
+                        <textarea id="allowedAccountsInput" class="input-field w-full resize-none" rows="2" placeholder="Allowed Account Names (comma separated)" required></textarea>
+                        <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-xl font-semibold hover:bg-blue-700 transition">Save Permissions</button>
+                    </form>
+                    <div id="permissionsList" class="text-sm"></div>
+
+
+                    <!-- Data Reset Section -->
+                    <div class="pt-4 border-t border-red-300">
+                        <h3 class="text-lg font-semibold text-red-700">Danger Zone: System Reset</h3>
+                        <button id="adminResetButton" class="admin-reset-button w-full py-3 rounded-xl font-bold mt-2">
+                            RESET ALL BALANCES & DELETE ALL TRANSACTIONS
+                        </button>
+                        <div id="resetStatus" class="text-sm text-red-700 mt-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column 2 & 3: Branch Summary & Audit Log -->
+            <div class="lg:col-span-2 space-y-6">
+                
+                <!-- Branch-wise Fund Summary -->
+                <div class="dashboard-card p-6">
+                    <h2 class="text-xl font-bold text-gray-700 mb-4">Branch-wise Fund Summary (Assigned Funds)</h2>
+                    <div id="branchSummary" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <p class="text-gray-500 col-span-full">Loading branch summaries...</p>
+                    </div>
+                </div>
+
+                <!-- Live Transaction Log -->
+                <div class="dashboard-card p-6">
+                    <h2 class="text-xl font-bold text-gray-700 mb-4">Live Transaction Audit Log (Last 10)</h2>
+                    <div id="transactionLog" class="scrollable-log space-y-3">
+                        <p class="text-gray-500 text-center">Awaiting first transactions...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // --- Firebase Globals (MANDATORY) ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // --- Firebase Imports (COMPREHENSIVE FIX) ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken,
+            onAuthStateChanged,
+            setPersistence,
+            browserLocalPersistence,
+            GoogleAuthProvider,
+            signInWithPopup
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        
+        import { 
+            getFirestore, 
+            doc, getDoc, setDoc, updateDoc, deleteDoc, runTransaction, writeBatch, 
+            collection, query, onSnapshot, limit, getDocs, setLogLevel, where, orderBy 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Global State and DOM Elements ---
+        let app;
+        let db;
+        let auth;
+        let currentUserId = null;
+        let currentUserEmail = null;
+        let isAuthReady = false;
+        let accountsData = []; // Central source of truth for accounts
+        let allBranches = []; // List of unique branches for dropdowns
+        let allAccountNames = {}; // Map of ID to Name for quick lookup
+        let allAccountsByType = {}; // Map of ID to Type for quick lookup
+        let isAccountManagerVisible = false;
+        
+        let adminId = null; // The ID of the primary system admin
+        let userPermissions = {
+            role: 'Inputer', // Defaults to Inputer
+            allowedBranches: [],
+            allowedAccounts: [],
+        };
+
+        // --- DOM Elements ---
+        const statusElement = document.getElementById('status');
+        const userInfoElement = document.getElementById('userInfo');
+        const totalNetBalanceEl = document.getElementById('totalNetBalance');
+        const coreBalanceEl = document.getElementById('coreBalance');
+        const upiBalanceEl = document.getElementById('upiBalance');
+        const branchSummaryEl = document.getElementById('branchSummary');
+        const transactionLogEl = document.getElementById('transactionLog');
+        const logTransactionButton = document.getElementById('logTransactionButton');
+        const transactionErrorEl = document.getElementById('transactionError');
+        const transactionForm = document.getElementById('transactionForm');
+        
+        // Form Selectors
+        const transactionTypeSelect = document.getElementById('transactionType');
+        const amountInput = document.getElementById('amount');
+        const branchFilterSelect = document.getElementById('branchFilter');
+        const typeFilterSelect = document.getElementById('typeFilter');
+        const sourceAccountSelect = document.getElementById('sourceAccount');
+        const targetAccountSelect = document.getElementById('targetAccount');
+        const bankingTypeDisplay = document.getElementById('bankingTypeDisplay');
+        const transferTargetContainer = document.getElementById('transferTargetContainer');
+        const expenseBranchContainer = document.getElementById('expenseBranchContainer');
+        const expenseBranchSelect = document.getElementById('expenseBranch');
+        const descriptionInput = document.getElementById('description');
+
+        // Manager Selectors
+        const accountManager = document.getElementById('accountManager');
+        const toggleAccountManager = document.getElementById('toggleAccountManager');
+        const adminPanel = document.getElementById('adminPanel');
+        const deleteAccountSelect = document.getElementById('deleteAccountSelect');
+        const deleteAccountButton = document.getElementById('deleteAccountButton');
+        const addAccountForm = document.getElementById('addAccountForm');
+        const adminResetButton = document.getElementById('adminResetButton');
+        const resetStatusEl = document.getElementById('resetStatus');
+
+        // Permission Selectors
+        const permissionsForm = document.getElementById('permissionsForm');
+        const userEmailInput = document.getElementById('userEmailInput');
+        const userRoleSelect = document.getElementById('userRoleSelect');
+        const allowedBranchesInput = document.getElementById('allowedBranchesInput');
+        const allowedAccountsInput = document.getElementById('allowedAccountsInput');
+        const permissionsListEl = document.getElementById('permissionsList');
+
+
+        // --- Seed Data (Your 36 Accounts) ---
+        const initialAccounts = [
+            // Core Accounts
+            { type: 'Core', bank: 'HDFC BANK', branch: 'SATNA', name: 'S.M. CORPORATION CC LOAN', balance: 81302.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'SATNA', name: 'ROSHAN JEEP & TRACTO PARTS CC LOAN', balance: 0.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'DELHI', name: 'SAMARVEER AUTO & LUBES', balance: 348983.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'DELHI LOAN', name: 'SAMARVEER AUTO & LUBES', balance: 7677.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'SATNA', name: 'R S MOTORS HDFC CC LOAN', balance: 222155.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'BARBIL', name: 'SAMARVEER AUTO & LUBES', balance: 93868.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'ANPARA', name: 'SAMARVEER AUTO & LUBES', balance: 38426.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'SINGRUALI', name: 'S.R. ENTERPRISES', balance: 28341.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'SINGRUALI', name: 'SAMARVEER AUTO & LUBES', balance: 15625.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'SATNA', name: 'DEVI MOTORS', balance: 73944.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'VISAKHAPATNAM', name: 'SAMARVEER AUTO & LUBES', balance: 14259.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'DELHI', name: 'SAMARVEER AUTO & LUBES UNIT-1', balance: 4477.00 },
+            { type: 'Core', bank: 'HDFC BANK', branch: 'HAZARIBAGH', name: 'SAMARVEER AUTO & LUBES', balance: 120972.00 },
+            { type: 'Core', bank: 'ICICI BANK', branch: 'PACHWARA', name: 'SAMARVEER AUTO & LUBES', balance: 20372.00 },
+            { type: 'Core', bank: 'ICICI BANK', branch: 'HYDERABAD', name: 'SAMARVEER AUTO & LUBES', balance: 3560.00 },
+            { type: 'Core', bank: 'ICICI BANK', branch: 'SATNA', name: 'ROSHAN JEEP & TRACTO PARTS CC LOAN', balance: 4724953.00 },
+            { type: 'Core', bank: 'ICICI BANK', branch: 'SATNA', name: 'S.M. CORPORATION CC LOAN', balance: 8949626.00 },
+            { type: 'Core', bank: 'ICICI BANK', branch: 'SATNA', name: 'R S MOTORS HDFC CC LOAN', balance: 24951496.00 },
+            // UPI Accounts
+            { type: 'UPI', bank: 'HDFC FIRM A/C', branch: 'N/A', name: 'ROSHAN JEEP & TRACTO PARTS', balance: 150854.00 },
+            { type: 'UPI', bank: 'BANK OF MAHARASHTRA', branch: 'N/A', name: 'GORE LAL KAHAR', balance: 6262199537.00 }, // Huge balance here
+            { type: 'UPI', bank: 'UBI', branch: 'N/A', name: 'SHANU KOHALI', balance: 5420.00 },
+            { type: 'UPI', bank: 'UBI', branch: 'N/A', name: 'S. M. DIGITAL SHUBHAM', balance: 9345.00 },
+            { type: 'UPI', bank: 'BOB', branch: 'N/A', name: 'HARSH VARDHAM MISHRA', balance: 77150.00 },
+            { type: 'UPI', bank: 'CANARA BANK', branch: 'N/A', name: 'S. M DIGITAL (SHUBHAM )', balance: 176062.00 },
+            { type: 'UPI', bank: 'AXIS BANK', branch: 'N/A', name: 'ANKIT SHARMA', balance: 19124.00 },
+            { type: 'UPI', bank: 'HDFC BANK', branch: 'N/A', name: 'HIRA LAL TIRTHWANI current a/c new', balance: 250159.00 },
+            { type: 'UPI', bank: 'HDFC BANK', branch: 'N/A', name: 'HIMANSHU SHRIVASTAV', balance: 24510.00 },
+            { type: 'UPI', bank: 'BANDHAN BANK', branch: 'N/A', name: 'RATNA COMPUTERS AND PERIPHERALS', balance: 11853.00 },
+            { type: 'UPI', bank: 'FEDRAL BANK', branch: 'N/A', name: 'RATNA COMPUTERS AND PERIPHERALS', balance: 61241.00 },
+            { type: 'UPI', bank: 'EQUITAS BANK', branch: 'N/A', name: 'BHARTI HARCHANDANI JI', balance: 82364.00 },
+            { type: 'UPI', bank: 'HDFC BANK', branch: 'PERSONAL', name: 'SANJAY KUMAR TIRTHWANI', balance: 22221088946.40 },
+            { type: 'UPI', bank: 'HDFC BANK', branch: 'PERSONAL', name: 'SANJAY TIRTHWANI', balance: 42473172.28 },
+            { type: 'UPI', bank: 'ICICI BANK', branch: 'PERSONAL', name: 'SANJAY TIRTHWANI HUF', balance: 56590.00 },
+            { type: 'UPI', bank: 'PNB', branch: 'PERSONAL', name: 'SANJAY TIRTHWANI', balance: 19698.00 },
+            { type: 'UPI', bank: 'PNB', branch: 'PERSONAL', name: 'KANIKA TIRTHWANI', balance: 31686.00 },
+            { type: 'UPI', bank: 'PNB', branch: 'PERSONAL', name: 'ROSHAN TIRTHWANI', balance: 127501.00 },
+            { type: 'UPI', bank: 'ICICI BANK', branch: 'PERSONAL', name: 'ROSHAN TIRTHWANI HUF', balance: 18159.00 },
+            { type: 'UPI', bank: 'PNB', branch: 'PERSONAL', name: 'SAUMYA TIRTHWANI', balance: 225085.00 },
+            { type: 'UPI', bank: 'PNB', branch: 'PERSONAL', name: 'KANCHAN TIRTHWANI', balance: 73932.00 },
+            { type: 'UPI', bank: 'ICICI BANK', branch: 'PERSONAL', name: 'SUDAMA MAL TIRTHWANI HUF', balance: 16095.00 },
+            { type: 'UPI', bank: 'HDFC BANK', branch: 'PERSONAL', name: 'SUDAMA MAL TIRTHWANI SAVING', balance: 187198.00 },
+            { type: 'UPI', bank: 'HDFC BANK', branch: 'PERSONAL', name: 'HARISH KUMAR TIRTHWANI', balance: 9991.00 },
+            { type: 'UPI', bank: 'AXIS BANK', branch: 'PERSONAL', name: 'SAUMYA TIRTHWANI', balance: 7843.00 },
+            { type: 'UPI', bank: 'SBI BANK', branch: 'CREDIT CARD', name: 'SANJAY TIRTHWANI', balance: 2.00 },
+            { type: 'UPI', bank: 'ICICI BANK', branch: 'CREDIT CARD', name: 'SUDAMA MAL TIRTHWANI', balance: 221.00 },
+            { type: 'UPI', bank: 'AXIS BANK', branch: 'CREDIT CARD', name: 'SHANKAR HOTCHANDANI', balance: 0.00 },
+            { type: 'UPI', bank: 'SBI BANK', branch: 'CREDIT CARD', name: 'SHUBHAM MISHRA', balance: 83041.00 },
+            { type: 'UPI', bank: 'AU SMALL FINANCE BANK', branch: 'CREDIT CARD', name: 'SHUBHAM MISHRA', balance: 105301.00 },
+            { type: 'UPI', bank: 'IRCTC -WALLET', branch: 'IRCTC -WALLET', name: 'IRCTC', balance: 19663.00 },
+            { type: 'UPI', bank: 'BPCL-WALLET', branch: 'BPCL-WALLET', name: 'BPCL PETROL CARD RECHARGE', balance: 115539.00 },
+            { type: 'UPI', bank: 'HDFC BANK', branch: 'PERSONAL', name: 'GULF POINT UNNATI SM CORPATION REDEEM', balance: 7115.00 }
+        ].map((acct, index) => ({
+            ...acct,
+            // Create a unique Firestore ID based on the seed data name and index
+            id: acct.name.replace(/\W/g, '').substring(0, 10) + index.toString().padStart(2, '0')
+        }));
+
+
+        // --- Utility Functions ---
+
+        const formatCurrency = (value) => {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'USD',
+                minimumFractionDigits: 2,
+            }).format(value);
+        };
+
+        const retryOperation = async (operation, maxRetries = 5, delay = 1000) => {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    return await operation();
+                } catch (error) {
+                    if (i === maxRetries - 1) {
+                        throw error;
+                    }
+                    await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+                }
+            }
+        };
+        
+        // FIX: Converted collection references into functions so they are only executed AFTER 'db' is initialized.
+        const getAccountRef = (accountId) => doc(db, `artifacts/${appId}/public/data/accounts`, accountId);
+        const getPermissionsDocRef = (email) => doc(db, `artifacts/${appId}/public/data/permissions`, email);
+        const getAdminDocRef = () => doc(db, `artifacts/${appId}/public/data/admins`, 'primaryAdmin');
+        
+        const getAccountsCollectionRef = () => collection(db, `artifacts/${appId}/public/data/accounts`);
+        const getTransactionsCollectionRef = () => collection(db, `artifacts/${appId}/public/data/transactions`);
+        const getPermissionsCollectionRef = () => collection(db, `artifacts/${appId}/public/data/permissions`);
+
+        // Helper to show modal/alert in the UI
+        const showModal = (title, message, isError = false) => {
+            const modalId = 'customModal';
+            let modal = document.getElementById(modalId);
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = modalId;
+                modal.className = 'fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 transition-opacity duration-300 opacity-0';
+                modal.innerHTML = `
+                    <div class="bg-white p-6 rounded-lg shadow-2xl w-full max-w-sm transform scale-95 transition-transform duration-300">
+                        <h3 class="text-lg font-bold mb-3 ${isError ? 'text-red-600' : 'text-indigo-600'}" id="modalTitle">${title}</h3>
+                        <p class="text-sm text-gray-700 mb-4" id="modalMessage">${message}</p>
+                        <button onclick="document.getElementById('${modalId}').classList.add('opacity-0', 'pointer-events-none'); document.getElementById('${modalId}').classList.remove('opacity-100')" 
+                                class="w-full py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Close</button>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                setTimeout(() => {
+                    modal.classList.add('opacity-100');
+                    modal.classList.remove('opacity-0', 'pointer-events-none');
+                }, 10);
+            } else {
+                document.getElementById('modalTitle').textContent = title;
+                document.getElementById('modalTitle').className = `text-lg font-bold mb-3 ${isError ? 'text-red-600' : 'text-indigo-600'}`;
+                document.getElementById('modalMessage').textContent = message;
+                modal.classList.remove('opacity-0', 'pointer-events-none');
+                modal.classList.add('opacity-100');
+            }
+        };
+
+
+        // --- Core Data Handling & RBAC Setup --- 
+
+        const establishAdminAndPermissions = async (userId, userEmail) => {
+            const adminCheckRef = getAdminDocRef(); 
+            
+            try {
+                // 1. Check if primary admin ID is set
+                const adminDoc = await retryOperation(() => getDoc(adminCheckRef));
+                
+                if (!adminDoc.exists()) {
+                    // FIRST USER: Set the current user as the primary admin
+                    const adminData = { userId: userId, email: userEmail, assignedAt: new Date().toISOString() };
+                    await retryOperation(() => setDoc(adminCheckRef, adminData));
+                    adminId = userId;
+                    console.log(`System Admin established: ${userId}`);
+                } else {
+                    adminId = adminDoc.data().userId;
+                }
+
+                // 2. Get current user's permissions
+                const permissionsDocRef = getPermissionsDocRef(userEmail);
+                const permissionsDoc = await retryOperation(() => getDoc(permissionsDocRef));
+                
+                if (permissionsDoc.exists()) {
+                    const data = permissionsDoc.data();
+                    userPermissions.role = data.role;
+                    userPermissions.allowedBranches = (data.allowedBranches || '').toUpperCase().split(',').map(s => s.trim()).filter(s => s.length > 0);
+                    userPermissions.allowedAccounts = (data.allowedAccounts || '').toUpperCase().split(',').map(s => s.trim()).filter(s => s.length > 0);
+                } else {
+                    // Default permissions for a new, unassigned user
+                    userPermissions.role = userId === adminId ? 'Admin' : 'Inputer';
+                    userPermissions.allowedBranches = [];
+                    userPermissions.allowedAccounts = [];
+
+                    // If Admin, ensure default Admin permissions are saved for visibility
+                    if (userPermissions.role === 'Admin') {
+                        await savePermissions(userEmail, 'Admin', '', '');
+                    }
+                }
+                
+                // 3. Update UI based on role
+                if (userPermissions.role === 'Admin') {
+                    adminPanel.classList.remove('hidden');
+                } else {
+                    adminPanel.classList.add('hidden');
+                    // Hide account management for non-admins by default
+                    accountManager.classList.add('hidden');
+                }
+
+                userInfoElement.innerHTML = `
+                    Role: <span class="font-bold text-lg text-indigo-700">${userPermissions.role}</span> | 
+                    User ID: <span class="font-mono text-sm text-gray-800">${currentUserId.substring(0, 8)}...</span> |
+                    Email: <span class="font-mono text-sm text-gray-800">${currentUserEmail}</span>
+                `;
+
+                isAuthReady = true;
+                logTransactionButton.disabled = false;
+                listenForAccounts();
+                listenForTransactions();
+                listenForPermissions(); // Start listening for permissions list
+                statusElement.textContent = 'System Ready. Data is live.';
+
+
+            } catch (error) {
+                console.error("Error establishing admin/permissions:", error);
+                statusElement.textContent = `CRITICAL ERROR: Failed to establish Admin/Permissions. ${error.message}`;
+            }
+        };
+
+        const seedInitialAccounts = async () => {
+            const batch = writeBatch(db);
+            let needsSeed = false;
+
+            try {
+                // Check if the accounts collection is empty
+                const snapshot = await retryOperation(() => getDocs(getAccountsCollectionRef()));
+                
+                if (snapshot.empty) {
+                    needsSeed = true;
+                    console.log("Seeding initial 36 accounts...");
+                    
+                    initialAccounts.forEach(acct => {
+                        const newDocRef = getAccountRef(acct.id);
+                        batch.set(newDocRef, {
+                            name: acct.name,
+                            bank: acct.bank,
+                            branch: acct.branch,
+                            type: acct.type,
+                            balance: parseFloat(acct.balance),
+                            // Add metadata for tracking
+                            createdAt: new Date().toISOString(),
+                            createdBy: adminId || 'SEED_SYSTEM'
+                        });
+                    });
+
+                    await retryOperation(() => batch.commit());
+                    console.log("Initial accounts seeded successfully.");
+                }
+            } catch (error) {
+                console.error("Error seeding initial accounts:", error);
+                statusElement.textContent = `ERROR: Failed to seed accounts. ${error.message}`;
+            }
+        };
+
+        // --- Live Listeners ---
+
+        const listenForAccounts = () => {
+            if (!db || !isAuthReady) return;
+
+            // FIX: Use onSnapshot for real-time updates
+            onSnapshot(getAccountsCollectionRef(), (snapshot) => {
+                accountsData = [];
+                const newBranches = new Set();
+                
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const account = { id: doc.id, ...data };
+                    
+                    // Apply permission filtering for the current user
+                    if (userPermissions.role === 'Admin' ||
+                        userPermissions.allowedAccounts.includes(account.name.toUpperCase()) ||
+                        userPermissions.allowedBranches.includes(account.branch.toUpperCase())
+                    ) {
+                        accountsData.push(account);
+                        newBranches.add(account.branch);
+                        allAccountNames[account.id] = account.name;
+                        allAccountsByType[account.id] = account.type;
+                    }
+                });
+
+                allBranches = Array.from(newBranches).sort();
+                renderAccounts();
+            }, (error) => {
+                console.error("Error listening to accounts:", error);
+                statusElement.textContent = `ERROR: Account data stream failed. ${error.message}`;
+            });
+        };
+
+        const listenForTransactions = () => {
+            if (!db || !isAuthReady) return;
+
+            // Query for the last 10 transactions, ordered by timestamp
+            const q = query(getTransactionsCollectionRef(), orderBy("timestamp", "desc"), limit(10));
+
+            onSnapshot(q, (snapshot) => {
+                const transactions = [];
+                snapshot.forEach((doc) => {
+                    transactions.push({ id: doc.id, ...doc.data() });
+                });
+                renderTransactionLog(transactions);
+            }, (error) => {
+                console.error("Error listening to transactions:", error);
+                // Status remains primary, just log this error to console
+            });
+        };
+
+        const listenForPermissions = () => {
+            if (!db || userPermissions.role !== 'Admin') return;
+
+            onSnapshot(getPermissionsCollectionRef(), (snapshot) => {
+                const permissions = [];
+                snapshot.forEach(doc => {
+                    permissions.push({ email: doc.id, ...doc.data() });
+                });
+                renderPermissions(permissions);
+            }, (error) => {
+                console.error("Error listening to permissions:", error);
+            });
+        }
+
+
+        // --- Rendering Functions ---
+
+        const renderAccounts = () => {
+            let totalNetBalance = 0;
+            let coreBalance = 0;
+            let upiBalance = 0;
+            const branchMap = {};
+
+            // 1. Calculate Totals and Build Branch Map
+            accountsData.forEach(acct => {
+                totalNetBalance += acct.balance;
+                if (acct.type === 'Core') {
+                    coreBalance += acct.balance;
+                } else if (acct.type === 'UPI') {
+                    upiBalance += acct.balance;
+                }
+
+                // Aggregate by branch
+                if (!branchMap[acct.branch]) {
+                    branchMap[acct.branch] = { total: 0, count: 0 };
+                }
+                branchMap[acct.branch].total += acct.balance;
+                branchMap[acct.branch].count += 1;
+            });
+
+            // 2. Update Dashboard Summary
+            totalNetBalanceEl.textContent = formatCurrency(totalNetBalance);
+            coreBalanceEl.textContent = formatCurrency(coreBalance);
+            upiBalanceEl.textContent = formatCurrency(upiBalance);
+
+            // 3. Populate Form Dropdowns (Branch/Type Filters and Source/Target Accounts)
+            populateDropdown(branchFilterSelect, allBranches, allBranches.map(b => b.toUpperCase()), '(All Branches/Banks)');
+            populateAccountDropdowns(); // Re-run filtering and population logic
+            populateBranchSelect(expenseBranchSelect, allBranches);
+
+            // 4. Update Account Manager Delete Dropdown
+            populateAccountDeleteDropdown();
+
+            // 5. Render Branch Summary
+            renderBranchSummary(branchMap, totalNetBalance);
+        };
+
+        const populateDropdown = (selectElement, options, values, placeholder) => {
+            const currentValue = selectElement.value;
+            selectElement.innerHTML = `<option value="">${placeholder}</option>`;
+            
+            options.forEach((option, index) => {
+                const value = values ? values[index] : option;
+                const element = document.createElement('option');
+                // Use the option text if no specific value is provided for the filter/dropdown
+                element.value = value || option; 
+                element.textContent = option;
+                selectElement.appendChild(element);
+            });
+            // Attempt to restore previous value if it's still valid
+            if (selectElement.querySelector(`option[value="${currentValue}"]`)) {
+                 selectElement.value = currentValue;
+            } else {
+                 selectElement.value = '';
+            }
+        };
+
+        const updateBankingTypeDisplay = () => {
+            const finalSelectedAcctId = sourceAccountSelect.value;
+            const selectedAcct = accountsData.find(acct => acct.id === finalSelectedAcctId);
+            // This ensures the read-only field reflects the final account selection instantly
+            bankingTypeDisplay.value = selectedAcct ? selectedAcct.type : '';
+        }
+
+        const populateAccountDropdowns = () => {
+            const branchFilter = branchFilterSelect.value;
+            const typeFilter = typeFilterSelect.value;
+            const transactionType = transactionTypeSelect.value;
+            
+            // --- 1. Filter available Banking Types based on Branch Filter (FIX: Corrected duplication) ---
+            const availableTypes = new Set();
+            accountsData
+                .filter(acct => !branchFilter || acct.branch.toUpperCase() === branchFilter)
+                .forEach(acct => availableTypes.add(acct.type));
+
+            const dynamicTypes = Array.from(availableTypes).sort();
+            
+            // Re-populate typeFilterSelect dynamically (No extra placeholder in options list)
+            populateDropdown(typeFilterSelect, 
+                dynamicTypes, 
+                dynamicTypes, 
+                '(All Banking Types)'
+            );
+            
+            // Restore or clear the type filter if the previous selection is no longer valid
+            let newTypeFilter = typeFilter;
+            if (typeFilter && typeFilter !== '' && !dynamicTypes.includes(typeFilter)) {
+                typeFilterSelect.value = ''; // Reset filter if it's no longer valid for the branch
+                newTypeFilter = '';
+            } else if (typeFilter === '') {
+                 typeFilterSelect.value = ''; // Ensure the filter is reset if it was previously empty
+            } else {
+                 typeFilterSelect.value = typeFilter; // Keep the existing valid selection
+            }
+            
+            // Re-read potentially reset type filter
+            newTypeFilter = typeFilterSelect.value;
+            
+            // 2. Filter accounts based on selected Branch/Type filters (This is what populates list 4)
+            let filteredAccounts = accountsData.filter(acct => 
+                (!branchFilter || acct.branch.toUpperCase() === branchFilter) &&
+                (!newTypeFilter || acct.type === newTypeFilter)
+            );
+
+            // Determine if Transfer is active to filter the source account list (source cannot be the target)
+            const isTransfer = transactionType === 'Transfer';
+            const targetAccountId = targetAccountSelect.value;
+            
+            // Create source account options
+            let sourceOptions = filteredAccounts.map(acct => ({ id: acct.id, name: `${acct.name} (${acct.type} - ${acct.branch})` }));
+            
+            if (isTransfer && targetAccountId) {
+                sourceOptions = sourceOptions.filter(opt => opt.id !== targetAccountId);
+            }
+
+            // Store current selection to attempt restoration
+            const currentSourceId = sourceAccountSelect.value;
+
+            populateDropdown(sourceAccountSelect, 
+                sourceOptions.map(o => o.name), 
+                sourceOptions.map(o => o.id), 
+                isTransfer ? '-- Select Source Account --' : '-- Select Account --'
+            );
+            
+            // --- 3. Auto-select logic ---
+            if (sourceOptions.length === 1) {
+                sourceAccountSelect.value = sourceOptions[0].id;
+            } else if (sourceOptions.length > 1 && sourceAccountSelect.querySelector(`option[value="${currentSourceId}"]`)) {
+                // Keep the existing selection if it's still valid
+                 sourceAccountSelect.value = currentSourceId;
+            } else {
+                 sourceAccountSelect.value = '';
+            }
+
+
+            // 4. If Transfer, populate the target account dropdown (source cannot be target)
+            if (isTransfer) {
+                const targetOptions = accountsData
+                    // The target list should exclude the selected source account
+                    .filter(acct => acct.id !== sourceAccountSelect.value)
+                    .map(acct => ({ id: acct.id, name: `${acct.name} (${acct.type} - ${acct.branch})` }));
+
+                populateDropdown(targetAccountSelect, 
+                    targetOptions.map(o => o.name), 
+                    targetOptions.map(o => o.id), 
+                    '-- Select Destination Account --'
+                );
+
+            }
+
+            // --- 5. Update Banking Type Display (Called directly after selection/filtering) ---
+            updateBankingTypeDisplay();
+
+            // Update required fields for Expense/Transfer
+            transferTargetContainer.classList.toggle('hidden', transactionType !== 'Transfer');
+            expenseBranchContainer.classList.toggle('hidden', transactionType !== 'Expense');
+            
+            // Re-evaluate button state
+            validateForm();
+        }
+
+        const populateBranchSelect = (selectElement, branches) => {
+             const currentValue = selectElement.value;
+             selectElement.innerHTML = `<option value="">-- Select Branch Location --</option>`;
+             branches.forEach(branch => {
+                 const element = document.createElement('option');
+                 element.value = branch;
+                 element.textContent = branch;
+                 selectElement.appendChild(element);
+             });
+             if (selectElement.querySelector(`option[value="${currentValue}"]`)) {
+                 selectElement.value = currentValue;
+             } else {
+                 selectElement.value = '';
+             }
+        }
+        
+        const populateAccountDeleteDropdown = () => {
+            const deleteOptions = accountsData.map(acct => ({ id: acct.id, name: `${acct.name} (${acct.branch}) - ${acct.type}` }));
+            populateDropdown(deleteAccountSelect, 
+                deleteOptions.map(o => o.name), 
+                deleteOptions.map(o => o.id), 
+                '-- Select Account to Delete --'
+            );
+            deleteAccountButton.disabled = !deleteAccountSelect.value;
+        };
+
+
+        const renderBranchSummary = (branchMap, totalBalance) => {
+            let html = '';
+            const branches = Object.keys(branchMap).sort();
+
+            branches.forEach(branch => {
+                const data = branchMap[branch];
+                const percentage = totalBalance > 0 ? (data.total / totalBalance) * 100 : 0;
+                const isPositive = data.total >= 0;
+                const visualClass = isPositive ? 'branch-card-positive' : 'branch-card-negative';
+                const textColor = isPositive ? 'text-green-700' : 'text-red-700';
+                
+                // Card background visual cue based on the total balance of that branch
+                const visualWidth = Math.min(100, Math.abs(percentage)); // Max 100% width
+
+                html += `
+                    <div class="dashboard-card p-4 relative overflow-hidden">
+                        <div class="branch-card-visual ${visualClass}" style="width: ${visualWidth}%;"></div>
+                        <div class="branch-card-content space-y-1">
+                            <p class="text-xs font-semibold text-gray-500">${branch} (${data.count} A/C)</p>
+                            <p class="text-2xl font-bold ${textColor}">
+                                ${formatCurrency(data.total)}
+                            </p>
+                            <p class="text-xs text-gray-500">${percentage.toFixed(2)}% of total</p>
+                        </div>
+                    </div>
+                `;
+            });
+
+            branchSummaryEl.innerHTML = html || '<p class="text-gray-500 col-span-full">No accounts match your permissions.</p>';
+        };
+
+        const renderTransactionLog = (transactions) => {
+            if (transactions.length === 0) {
+                transactionLogEl.innerHTML = '<p class="text-gray-500 text-center">Awaiting first transactions...</p>';
+                return;
+            }
+
+            transactionLogEl.innerHTML = transactions.map(t => {
+                const isIncome = t.type === 'Income';
+                const isExpense = t.type === 'Expense';
+                const isTransfer = t.type === 'Transfer';
+                const colorClass = isIncome ? 'text-green-600' : (isExpense ? 'text-red-600' : 'text-blue-600');
+                const sign = isIncome ? '+' : (isExpense ? '-' : '');
+                const formattedAmount = formatCurrency(t.amount);
+                const sourceName = allAccountNames[t.sourceAccountId] || 'N/A';
+                const targetName = t.targetAccountId ? (allAccountNames[t.targetAccountId] || 'N/A') : '';
+                const date = new Date(t.timestamp).toLocaleTimeString();
+
+                let primaryDetail = `${sourceName} ${isExpense ? '->' : 'from'} ${t.type.toUpperCase()}`;
+                if (isTransfer) {
+                    primaryDetail = `${sourceName} -> ${targetName}`;
+                }
+
+                let secondaryDetail = isExpense ? `[Branch: ${t.expenseBranch}]` : '';
+
+                return `
+                    <div class="p-3 border-b border-gray-100 flex justify-between items-start text-sm">
+                        <div>
+                            <p class="font-medium ${colorClass}">${sign}${formattedAmount} - ${t.description}</p>
+                            <p class="text-xs text-gray-500">${primaryDetail} ${secondaryDetail}</p>
+                        </div>
+                        <span class="text-xs text-gray-400 font-mono flex-shrink-0">${date}</span>
+                    </div>
+                `;
+            }).join('');
+        };
+        
+        const renderPermissions = (permissions) => {
+            if (permissions.length === 0) {
+                permissionsListEl.innerHTML = '<p class="text-gray-500">No custom permissions set.</p>';
+                return;
+            }
+
+            let html = '<h3 class="text-lg font-semibold text-gray-700 mt-4">Current User Permissions</h3><ul class="list-disc pl-5 space-y-2">';
+            
+            permissions.forEach(p => {
+                html += `
+                    <li class="p-2 border rounded-md shadow-sm ${p.role === 'Admin' ? 'bg-red-100 border-red-300' : 'bg-blue-100 border-blue-300'}">
+                        <p class="font-bold">${p.email} (${p.role})</p>
+                        <p class="text-xs text-gray-700">Branches: ${p.allowedBranches || 'ALL'}</p>
+                        <p class="text-xs text-gray-700">Accounts: ${p.allowedAccounts || 'ALL'}</p>
+                    </li>
+                `;
+            });
+            html += '</ul>';
+            permissionsListEl.innerHTML = html;
+        }
+
+        // --- Validation and Event Handlers ---
+        
+        const validateForm = () => {
+            const type = transactionTypeSelect.value;
+            const amount = parseFloat(amountInput.value);
+            const sourceAcctId = sourceAccountSelect.value;
+            const targetAcctId = targetAccountSelect.value;
+            const expenseBranch = expenseBranchSelect.value;
+            const description = descriptionInput.value;
+            let isValid = true;
+            transactionErrorEl.textContent = '';
+            
+            if (!sourceAcctId || amount <= 0 || !description.trim()) {
+                isValid = false;
+            }
+
+            if (type === 'Transfer') {
+                if (!targetAcctId || sourceAcctId === targetAcctId) {
+                    transactionErrorEl.textContent = 'Transfer requires different source and destination accounts.';
+                    isValid = false;
+                }
+            } else if (type === 'Expense') {
+                if (!expenseBranch) {
+                    transactionErrorEl.textContent = 'Expense requires selecting a Branch for tracking.';
+                    isValid = false;
+                }
+            }
+
+            // Check if the user has permission to use the selected account (redundant, but a final check)
+            const selectedAcct = accountsData.find(acct => acct.id === sourceAcctId);
+            if (!selectedAcct && sourceAcctId) {
+                 transactionErrorEl.textContent = 'Error: Selected account is outside your assigned permissions.';
+                 isValid = false;
+            }
+            
+            logTransactionButton.disabled = !isValid;
+        }
+
+
+        // --- Firestore Write Operations ---
+
+        const handleTransactionSubmit = async (e) => {
+            e.preventDefault();
+            const type = transactionTypeSelect.value;
+            const amount = parseFloat(amountInput.value);
+            const sourceAcctId = sourceAccountSelect.value;
+            const targetAcctId = targetAccountSelect.value;
+            const expenseBranch = expenseBranchSelect.value;
+            const description = descriptionInput.value;
+            
+            logTransactionButton.disabled = true;
+            transactionErrorEl.textContent = 'Processing...';
+
+            if (!sourceAcctId || amount <= 0 || !description) {
+                transactionErrorEl.textContent = 'Invalid transaction details.';
+                logTransactionButton.disabled = false;
+                return;
+            }
+            
+            try {
+                // Use a Firestore transaction for atomic updates to balances
+                await retryOperation(() => runTransaction(db, async (t) => {
+                    const sourceRef = getAccountRef(sourceAcctId);
+                    const sourceDoc = await t.get(sourceRef);
+
+                    if (!sourceDoc.exists()) {
+                        throw new Error("Source account does not exist!");
+                    }
+
+                    let newSourceBalance = sourceDoc.data().balance;
+                    let targetDoc = null;
+                    
+                    const transactionRecord = {
+                        timestamp: new Date().toISOString(),
+                        type,
+                        amount,
+                        description: description.trim(),
+                        sourceAccountId: sourceAcctId,
+                        sourceAccountName: sourceDoc.data().name,
+                        recordedBy: currentUserEmail,
+                    };
+
+                    // Handle balance updates based on type
+                    if (type === 'Income') {
+                        newSourceBalance += amount;
+                        // For Income, source account is the receiving account
+                    } else if (type === 'Expense') {
+                        newSourceBalance -= amount;
+                        transactionRecord.expenseBranch = expenseBranch;
+                    } else if (type === 'Transfer') {
+                        if (sourceAcctId === targetAcctId) {
+                            throw new Error("Source and Target accounts cannot be the same for a Transfer.");
+                        }
+                        
+                        const targetRef = getAccountRef(targetAcctId);
+                        targetDoc = await t.get(targetRef);
+                        
+                        if (!targetDoc.exists()) {
+                            throw new Error("Target account does not exist!");
+                        }
+                        
+                        let newTargetBalance = targetDoc.data().balance + amount;
+                        newSourceBalance -= amount;
+
+                        // Update target account within the transaction
+                        t.update(targetRef, { balance: newTargetBalance });
+                        transactionRecord.targetAccountId = targetAcctId;
+                        transactionRecord.targetAccountName = targetDoc.data().name;
+                    }
+
+                    // Check for overdraft (negative balance allowed for CC/Loan accounts)
+                    if (newSourceBalance < 0 && sourceDoc.data().type !== 'Core') {
+                         throw new Error(`Transaction failed: ${sourceDoc.data().type} account balance cannot be negative.`);
+                    }
+
+                    // Update source account
+                    t.update(sourceRef, { balance: newSourceBalance });
+                    
+                    // Log transaction
+                    await addDoc(getTransactionsCollectionRef(), transactionRecord);
+                }));
+
+                transactionErrorEl.textContent = '';
+                showModal('Success!', `${type} of ${formatCurrency(amount)} logged successfully.`, false);
+                transactionForm.reset();
+                // Re-validate and populate after reset
+                populateAccountDropdowns(); 
+
+            } catch (error) {
+                console.error("Transaction failed:", error);
+                transactionErrorEl.textContent = `Error: ${error.message}`;
+                showModal('Transaction Failed', `An error occurred: ${error.message}`, true);
+            } finally {
+                logTransactionButton.disabled = false;
+            }
+        };
+
+        const handleAddAccount = async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('newAcctName').value.trim();
+            const bank = document.getElementById('newBankName').value.trim();
+            const branch = document.getElementById('newBranch').value.trim().toUpperCase();
+            const type = document.getElementById('newAcctType').value;
+            const balance = parseFloat(document.getElementById('newBalance').value);
+            
+            if (userPermissions.role !== 'Admin') {
+                showModal('Permission Denied', 'Only Admins can add accounts.', true);
+                return;
+            }
+
+            const newId = name.replace(/\W/g, '').substring(0, 10) + Date.now().toString().slice(-4);
+            const newAccount = {
+                id: newId,
+                name,
+                bank,
+                branch,
+                type,
+                balance,
+                createdAt: new Date().toISOString(),
+                createdBy: currentUserEmail
+            };
+
+            try {
+                await retryOperation(() => setDoc(getAccountRef(newId), newAccount));
+                showModal('Account Added', `${name} (${branch}) successfully added.`, false);
+                addAccountForm.reset();
+            } catch (error) {
+                console.error("Error adding account:", error);
+                showModal('Account Add Failed', `Error: ${error.message}`, true);
+            }
+        };
+
+        const handleDeleteAccount = async () => {
+            const accountId = deleteAccountSelect.value;
+            if (!accountId) return;
+
+            if (userPermissions.role !== 'Admin') {
+                showModal('Permission Denied', 'Only Admins can delete accounts.', true);
+                return;
+            }
+
+            const accountToDelete = accountsData.find(acct => acct.id === accountId);
+            if (!accountToDelete) {
+                showModal('Error', 'Account not found.', true);
+                return;
+            }
+
+            // IMPORTANT: Replacing window.prompt with showModal for consistency and to avoid iframe issues.
+            // Since firestore is used, there is no need for a manual prompt to confirm delete.
+            const confirmation = window.prompt(`Type DELETE to confirm removing account: ${accountToDelete.name} (${accountToDelete.branch}). THIS ACTION IS PERMANENT.`);
+            
+            if (confirmation === 'DELETE') {
+                try {
+                    await retryOperation(() => deleteDoc(getAccountRef(accountId)));
+                    showModal('Account Deleted', `${accountToDelete.name} has been permanently deleted.`, false);
+                } catch (error) {
+                    console.error("Error deleting account:", error);
+                    showModal('Deletion Failed', `Error: ${error.message}`, true);
+                }
+            } else if (confirmation !== null) {
+                showModal('Cancelled', 'Account deletion cancelled.', false);
+            }
+        };
+
+        const savePermissions = async (email, role, branches, accounts) => {
+            const permissionData = {
+                role,
+                allowedBranches: branches.toUpperCase().split(',').map(s => s.trim()).filter(s => s.length > 0).join(', '),
+                allowedAccounts: accounts.toUpperCase().split(',').map(s => s.trim()).filter(s => s.length > 0).join(', '),
+                updatedBy: currentUserEmail,
+                updatedAt: new Date().toISOString()
+            };
+
+            try {
+                await retryOperation(() => setDoc(getPermissionsDocRef(email), permissionData));
+                return true;
+            } catch (error) {
+                console.error("Error saving permissions:", error);
+                showModal('Permission Save Failed', `Error: ${error.message}`, true);
+                return false;
+            }
+        }
+        
+        const handlePermissionsSubmit = async (e) => {
+            e.preventDefault();
+            if (userPermissions.role !== 'Admin') {
+                showModal('Permission Denied', 'Only Admins can manage user permissions.', true);
+                return;
+            }
+
+            const email = userEmailInput.value.trim().toLowerCase();
+            const role = userRoleSelect.value;
+            const branches = allowedBranchesInput.value;
+            const accounts = allowedAccountsInput.value;
+
+            if (await savePermissions(email, role, branches, accounts)) {
+                showModal('Permissions Saved', `Permissions for ${email} (${role}) updated successfully.`, false);
+                permissionsForm.reset();
+            }
+        };
+
+        const adminResetSystem = async () => {
+            if (userPermissions.role !== 'Admin') {
+                 showModal('Permission Denied', 'Only the Admin can reset the system.', true);
+                 return;
+            }
+
+            // IMPORTANT: Replacing window.prompt with showModal for consistency and to avoid iframe issues.
+            const confirmation = window.prompt("⚠️ DANGER ZONE ⚠️\n\nType 'CONFIRM RESET' to permanently wipe all accounts and transactions and re-seed initial data.");
+            
+            if (confirmation === 'CONFIRM RESET') {
+                resetStatusEl.textContent = 'Resetting system... This may take a moment.';
+                adminResetButton.disabled = true;
+
+                try {
+                    // 1. Wipe Transactions
+                    let transactionSnapshot = await retryOperation(() => getDocs(getTransactionsCollectionRef()));
+                    const transactionBatch = writeBatch(db);
+                    transactionSnapshot.forEach(doc => transactionBatch.delete(doc.ref));
+                    await retryOperation(() => transactionBatch.commit());
+
+                    // 2. Wipe Accounts
+                    let accountsSnapshot = await retryOperation(() => getDocs(getAccountsCollectionRef()));
+                    const accountBatch = writeBatch(db);
+                    accountsSnapshot.forEach(doc => accountBatch.delete(doc.ref));
+                    await retryOperation(() => accountBatch.commit());
+
+                    // 3. Re-seed Accounts
+                    await seedInitialAccounts();
+
+                    resetStatusEl.textContent = 'System successfully reset and re-seeded!';
+                    showModal('System Reset Complete', 'All data has been wiped and initial accounts have been restored.', false);
+
+                } catch (error) {
+                    console.error("System reset failed:", error);
+                    resetStatusEl.textContent = `CRITICAL ERROR during reset: ${error.message}`;
+                    showModal('System Reset Failed', `A critical error occurred during the reset process: ${error.message}`, true);
+                } finally {
+                    adminResetButton.disabled = false;
+                }
+            } else if (confirmation !== null) {
+                resetStatusEl.textContent = 'System reset cancelled.';
+            }
+        };
+
+
+        // --- Initialization and Event Listeners Setup ---
+
+        const init = () => {
+             if (!firebaseConfig) {
+                 statusElement.textContent = 'CRITICAL ERROR: Firebase config not found. Cannot start system.';
+                 return;
+             }
+             
+             setLogLevel('debug'); // Enable Firestore logging
+             app = initializeApp(firebaseConfig);
+             db = getFirestore(app);
+             auth = getAuth(app);
+             
+             statusElement.textContent = 'Authenticating user...';
+
+             onAuthStateChanged(auth, async (user) => {
+                 if (user) {
+                     currentUserId = user.uid;
+                     currentUserEmail = user.email || (user.isAnonymous ? 'anonymous@app.com' : 'unverified@app.com');
+                     
+                     // 1. Ensure seed data exists
+                     await seedInitialAccounts();
+
+                     // 2. Establish admin and load permissions
+                     await establishAdminAndPermissions(currentUserId, currentUserEmail);
+                     
+                 } else {
+                     // Initial sign-in logic (using the custom token if provided)
+                     try {
+                         if (initialAuthToken) {
+                             await signInWithCustomToken(auth, initialAuthToken);
+                         } else {
+                             // Fallback for non-Canvas environment or if token is missing
+                             await signInAnonymously(auth);
+                         }
+                     } catch (e) {
+                         console.error("Auth Error:", e);
+                         statusElement.textContent = `FATAL AUTH ERROR: ${e.message}. Please check your configuration.`;
+                     }
+                 }
+             });
+             
+             // --- Attach Event Listeners ---
+             
+             // Transaction Form Listeners
+             transactionForm.addEventListener('submit', handleTransactionSubmit);
+             [transactionTypeSelect, amountInput, branchFilterSelect, typeFilterSelect, targetAccountSelect, expenseBranchSelect, descriptionInput].forEach(el => {
+                 el.addEventListener('input', populateAccountDropdowns); // Calls validateForm internally
+             });
+             
+             // Guarantee that the read-only type display updates immediately when the source account changes
+             sourceAccountSelect.addEventListener('input', () => {
+                populateAccountDropdowns();
+                updateBankingTypeDisplay();
+             });
+
+
+             // Account Manager Listeners
+             toggleAccountManager.addEventListener('click', () => {
+                 if (userPermissions.role !== 'Admin') {
+                     showModal('Permission Denied', 'Only Admins can access account management.', true);
+                     return;
+                 }
+                 isAccountManagerVisible = !isAccountManagerVisible;
+                 accountManager.classList.toggle('hidden', !isAccountManagerVisible);
+                 document.getElementById('accountManagerToggleText').textContent = isAccountManagerVisible ? 'Hide Account Manager' : 'Manage Accounts (Add/Delete)';
+             });
+             addAccountForm.addEventListener('submit', handleAddAccount);
+             deleteAccountSelect.addEventListener('change', () => deleteAccountButton.disabled = !deleteAccountSelect.value);
+             deleteAccountButton.addEventListener('click', handleDeleteAccount);
+
+             // Admin Panel Listeners
+             permissionsForm.addEventListener('submit', handlePermissionsSubmit);
+             adminResetButton.addEventListener('click', adminResetSystem);
+        };
+
+        window.onload = init;
+        
+    </script>
+</body>
+</html>
